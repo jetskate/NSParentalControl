@@ -154,6 +154,24 @@ Defined in `settings.h`:
 | `log_level`         | INTEGER| Logging verbosity level                                              |
 | `blacklist`         | STRING | Per-user blocked title IDs, serialized as `uid=titleId,titleId;uid=titleId` (decimal title IDs) |
 | `authentication`    | INTEGER| Authentication mode                                                  |
+| `daily_limit_weekend_users` | STRING | Per-user weekend daily limit in minutes (serialized per-user value); 0/missing falls back to `daily_limit_users` |
+| `day_start_minutes` | INTEGER | Start of the logical day, minutes since midnight (default 240) |
+| `heartbeat_enabled` | INTEGER | 1 = heartbeat check-ins enabled |
+| `heartbeat_host` | STRING | Check-in server host or IP |
+| `heartbeat_port` | INTEGER | Check-in server port |
+| `heartbeat_interval_s` | INTEGER | Check-in interval in seconds |
+| `heartbeat_grace_s` | INTEGER | Disconnection grace in seconds before enforcement |
+| `heartbeat_boot_grace_s` | INTEGER | Post-boot grace in seconds (absent = 3 × grace) |
+| `heartbeat_token` | STRING | Pre-shared HMAC key, hex (secret) |
+| `heartbeat_device_id` | STRING | Device ID, hex (generated on first run if absent) |
+| `heartbeat_counter` | INTEGER | Anti-replay check-in counter |
+| `heartbeat_done_commands` | STRING | `;`-separated IDs of the last executed remote commands |
+| `grant_date` | STRING | Logical day (`YYYY-MM-DD`) the current remote grant applies to |
+| `grant_user` | STRING | User UID the current remote grant applies to |
+| `grant_minutes` | INTEGER | Granted extra minutes for that day and user |
+
+The 2.5.0 keys are purely additive: the settings format version stays 1
+and older builds ignore them. See `docs/heartbeat.md` for the protocol.
 
 ### Per-user values
 
@@ -162,6 +180,7 @@ The keys ending in `_users` share a common serialization format: a single STRING
 - `uid` is the user UID as a hex string (`accountUidToString`).
 - `value` depends on the key:
   - `daily_limit_users`: daily limit in minutes per day.
+  - `daily_limit_weekend_users`: weekend daily limit in minutes per day.
   - `bedtime_users` / `game_start_users`: time in minutes since midnight (0-1439).
 - A value of `0` means the bound is not set (disabled).
 

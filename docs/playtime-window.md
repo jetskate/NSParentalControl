@@ -64,10 +64,26 @@ The administrator can block games per user from the overlay (Admin menu → `Blo
 
 ## Daily limit
 
-- Stored per user in `daily_limit_users` (minutes per day).
+- Stored per user in `daily_limit_users` (minutes per day), with a
+  separate weekend limit in `daily_limit_weekend_users`. A weekend limit
+  of 0 (or a missing entry) falls back to the weekday limit, which keeps
+  single-limit setups unchanged.
 - Usage is accumulated per day in the history database (`sessions.bin`, see `docs/database-binary-format.md`).
 - `remaining = daily_limit - usage_today`; when `remaining <= 0` the game is stopped.
 - Notifications about the remaining time are sent every 15 minutes and every minute during the last 5 minutes (only when `show_remaining_time` is enabled and Ultrahand is used).
+
+## Weekday / weekend limits and the logical day
+
+"Today" is a **logical day** that starts at `day_start_minutes`
+(default 240 = 04:00) instead of midnight: play after midnight still
+counts for the day that is ending, and the weekday/weekend choice
+follows the logical day too (Friday 01:00 is still Thursday's budget).
+The computation lives in `playtime_rules.cpp` (`core::logicalDay`,
+`core::dailyLimitForDay`) and is unit tested.
+
+A remote grant (see `docs/heartbeat.md`) raises the effective limit of
+one logical day for one user on top of the base limit chosen here
+(`core::effectiveDailyLimit`).
 
 ## Enforcement
 

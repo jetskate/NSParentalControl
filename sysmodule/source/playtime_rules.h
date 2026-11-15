@@ -168,4 +168,118 @@ namespace alefbet::pctrl::core {
                                          bool showRemainingTime,
                                          bool titleBlocked = false);
 
+    /*! @brief A calendar date together with its day of week.
+     *
+     * The weekday uses 0 = Monday, 1 = Tuesday, ..., 5 = Saturday, 6 = Sunday.
+     */
+    struct LogicalDay {
+        s32 year = 0;   ///< Year (e.g. 2026).
+        u32 month = 0;  ///< Month (1-12).
+        u32 day = 0;    ///< Day of month (1-31).
+        u32 weekday = 0; ///< Day of week (0 = Monday ... 6 = Sunday).
+    };
+
+    /*! @brief Converts a civil (Gregorian) date to a count of days since 1970-01-01.
+     *
+     * This is Howard Hinnant's well-known days_from_civil algorithm; it is
+     * exact for any date and needs no lookup table.
+     *
+     * @param year Year (e.g. 2026).
+     * @param month Month (1-12).
+     * @param day Day of month (1-31).
+     * @return Number of days since 1970-01-01 (negative before).
+     */
+    s64 daysFromCivil(s32 year, u32 month, u32 day);
+
+    /*! @brief Converts a count of days since 1970-01-01 back to a civil date.
+     *
+     * Exact inverse of daysFromCivil (Hinnant's civil_from_days algorithm).
+     *
+     * @param days Days since 1970-01-01.
+     * @param year Receives the year.
+     * @param month Receives the month (1-12).
+     * @param day Receives the day of month (1-31).
+     */
+    void civilFromDays(s64 days, s32& year, u32& month, u32& day);
+
+    /*! @brief Returns the day of week of a day count since 1970-01-01.
+     *
+     * 1970-01-01 was a Thursday.
+     *
+     * @param days Days since 1970-01-01.
+     * @return Day of week (0 = Monday ... 6 = Sunday).
+     */
+    u32 weekdayFromDays(s64 days);
+
+    /*! @brief Checks whether a weekday (0 = Monday ... 6 = Sunday) is a weekend day.
+     *
+     * @param weekday Day of week (0 = Monday ... 6 = Sunday).
+     * @return true for Saturday (5) and Sunday (6), false otherwise.
+     */
+    bool isWeekendDay(u32 weekday);
+
+    /*! @brief Computes the logical day for a local date and time.
+     *
+     * The logical day starts at dayStartMinutes (e.g. 240 for 04:00) instead
+     * of midnight: a local time earlier than the day start still belongs to
+     * the previous logical day. The weekday is the weekday of the logical
+     * date, so weekend rules follow the logical day, not the calendar day.
+     *
+     * @param year Local year.
+     * @param month Local month (1-12).
+     * @param day Local day of month (1-31).
+     * @param minutesSinceMidnight Local time in minutes since midnight (0-1439).
+     * @param dayStartMinutes Start of the logical day in minutes since midnight (0 = calendar day).
+     * @return The logical day (date and weekday).
+     */
+    LogicalDay logicalDay(s32 year, u32 month, u32 day, u16 minutesSinceMidnight, u16 dayStartMinutes);
+
+    /*! @brief Formats a date as a "YYYYMMDD" string.
+     *
+     * @param year Year.
+     * @param month Month (1-12).
+     * @param day Day of month (1-31).
+     * @return Formatted date string (e.g. "20261115").
+     */
+    std::string formatDate(s32 year, u32 month, u32 day);
+
+    /*! @brief Selects the daily limit applicable to a day of week.
+     *
+     * On weekend days the weekend limit applies when it is set (non-zero);
+     * otherwise the weekday limit applies every day, which keeps the
+     * historical single-limit behaviour for users who never set a weekend
+     * limit.
+     *
+     * @param weekdayLimit Limit for Monday to Friday, in minutes (0 = no limit).
+     * @param weekendLimit Limit for Saturday and Sunday, in minutes (0 = not set).
+     * @param weekday Day of week (0 = Monday ... 6 = Sunday).
+     * @return The limit applicable to that day, in minutes.
+     */
+    u16 dailyLimitForDay(u16 weekdayLimit, u16 weekendLimit, u32 weekday);
+
+    /*! @brief Computes the effective daily limit including a temporary grant.
+     *
+     * A grant is a one-shot addition of minutes decided remotely (see
+     * docs/heartbeat.md). It only applies when it was issued for the
+     * current logical day and the current user (grantApplies); the result
+     * is clamped to the u16 range. A grant on a day without a base limit
+     * creates a limit of exactly the granted minutes.
+     *
+     * @param baseLimit The daily limit selected for the day, in minutes.
+     * @param grantMinutes The granted extra minutes.
+     * @param grantApplies Whether the stored grant targets this day and user.
+     * @return The effective daily limit in minutes.
+     */
+    u16 effectiveDailyLimit(u16 baseLimit, u16 grantMinutes, bool grantApplies);
+
+    /*! @brief Accumulates granted minutes, clamped to the u16 range.
+     *
+     * Several grants on the same day add up.
+     *
+     * @param existingMinutes Minutes already granted for the day.
+     * @param addedMinutes Minutes granted by the new command.
+     * @return The new total of granted minutes for the day.
+     */
+    u16 accumulatedGrant(u16 existingMinutes, u16 addedMinutes);
+
 }

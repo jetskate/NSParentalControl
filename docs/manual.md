@@ -8,6 +8,25 @@ The last version (> 2.0.0) has a different behaviour from the versions before, i
 
 Since version 2.3.2, the game is closed from the HOME menu, as a user would do it: the HOME menu is shown, then the "Close software" dialog, which is confirmed automatically a few seconds later. Do not use the controller during this sequence. A game launched again while the user is not allowed to play is detected within a few seconds and closed after the same countdown.
 
+## Heartbeat and remote control
+
+Since version 2.5, the sysmodule can check in with a server over the
+Internet every minute. If the server stays unreachable for more than
+5 minutes (the console lost its network, or left for another one), the
+console enforces the rules by itself: in handheld mode the screen turns
+off after a one-minute warning, and in TV mode the game is closed after
+the same warning. As soon as a check-in succeeds again, the screen turns
+back on. Time spent in sleep mode never counts as a disconnection.
+
+The administrator can also act from the server, without touching the
+console: grant extra minutes for today, change the daily limits or the
+playtime window, or lock the console once. The changes apply to the
+current user and are saved on the console. A grant for today shows up
+directly in the remaining time of the main menu.
+
+The heartbeat is off by default and is configured in the settings file
+(see `docs/heartbeat.md`); there is no overlay screen for it yet.
+
 ## Language
 
 Since version 2.3, the overlay interface and the notifications are shown in the language configured on the console. English, French and Simplified Chinese are supported; any other console language falls back to English.

@@ -26,4 +26,6 @@ public:
     static void notifyRemainingTime(int remainingTimeInMinutes);
     static void notifyRemainingSeconds(int remainingSeconds);
     static void notifyTitleNotAllowed();
+    static void notifyNetworkDisconnected();
+    static void notifyGameWillClose();
 };

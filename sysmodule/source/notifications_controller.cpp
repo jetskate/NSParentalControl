@@ -57,3 +57,19 @@ void NotificationsController::notifyRemainingSeconds(int remainingSeconds)
     UltraHandInterface::drawAttention();
     UltraHandInterface::writeNotification(message);
 }
+
+/*! @brief Sends an attention notification warning that the network is
+ * disconnected and the screen will turn off in 1 minute. */
+void NotificationsController::notifyNetworkDisconnected()
+{
+    UltraHandInterface::drawAttention();
+    UltraHandInterface::writeNotification(tr("Network disconnected, the screen will turn off in 1 minute"));
+}
+
+/*! @brief Sends an attention notification warning that the network is
+ * disconnected and the game will be closed in 1 minute (docked mode). */
+void NotificationsController::notifyGameWillClose()
+{
+    UltraHandInterface::drawAttention();
+    UltraHandInterface::writeNotification(tr("Network disconnected, the game will be closed in 1 minute"));
+}

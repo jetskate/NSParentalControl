@@ -27,6 +27,8 @@ const StringMap& french() {
         {"Parental control enabled", "Contrôle parental activé"},
         {"%s left", "Il reste %s"},
         {"This game is not allowed", "Ce jeu n'est pas autorisé"},
+        {"Network disconnected, the screen will turn off in 1 minute", "Réseau déconnecté, l'écran s'éteindra dans 1 minute"},
+        {"Network disconnected, the game will be closed in 1 minute", "Réseau déconnecté, le jeu sera fermé dans 1 minute"},
         {"h", "h"},
         {"mn", " min"}
     };

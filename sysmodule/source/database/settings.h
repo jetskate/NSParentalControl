@@ -57,3 +57,23 @@ constexpr const char* SETTING_BLACKLIST = "blacklist";
 constexpr const char* SETTING_AUTHENTICATION = "authentication";
 constexpr const char* SETTING_BEDTIME_USERS = "bedtime_users";
 constexpr const char* SETTING_GAME_START_USERS = "game_start_users";
+constexpr const char* SETTING_DAILY_LIMIT_WEEKEND_USERS = "daily_limit_weekend_users";
+constexpr const char* SETTING_DAY_START_MINUTES = "day_start_minutes";
+
+/* Server check-in ("heartbeat") settings, see docs/heartbeat.md */
+constexpr const char* SETTING_HEARTBEAT_ENABLED = "heartbeat_enabled";
+constexpr const char* SETTING_HEARTBEAT_HOST = "heartbeat_host";
+constexpr const char* SETTING_HEARTBEAT_PORT = "heartbeat_port";
+constexpr const char* SETTING_HEARTBEAT_INTERVAL_S = "heartbeat_interval_s";
+constexpr const char* SETTING_HEARTBEAT_GRACE_S = "heartbeat_grace_s";
+constexpr const char* SETTING_HEARTBEAT_BOOT_GRACE_S = "heartbeat_boot_grace_s";
+constexpr const char* SETTING_HEARTBEAT_TOKEN = "heartbeat_token";
+constexpr const char* SETTING_HEARTBEAT_DEVICE_ID = "heartbeat_device_id";
+constexpr const char* SETTING_HEARTBEAT_COUNTER = "heartbeat_counter";
+constexpr const char* SETTING_HEARTBEAT_DONE_COMMANDS = "heartbeat_done_commands";
+
+/* Remote one-shot grant (see docs/heartbeat.md): minutes granted for one
+ * logical day and one user, delivered by a grant_minutes command. */
+constexpr const char* SETTING_GRANT_DATE = "grant_date";
+constexpr const char* SETTING_GRANT_USER = "grant_user";
+constexpr const char* SETTING_GRANT_MINUTES = "grant_minutes";

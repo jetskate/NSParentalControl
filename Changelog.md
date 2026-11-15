@@ -1,5 +1,20 @@
 # Changelog
 
+## Release 2.5.0
+
+### Sysmodule
+
+- Weekday and weekend daily limits per user (`daily_limit_weekend_users`); a weekend limit of 0 falls back to the weekday limit
+- The day now rolls over at 04:00 by default (`day_start_minutes`) instead of midnight: play after midnight counts for the day that is ending, and the weekday/weekend choice follows this logical day
+- Heartbeat: the sysmodule checks in with a server every minute (HMAC-signed, replay-protected) and reports the firmware/Atmosphère versions, the running game and today's usage
+- Dead man's switch: after 5 minutes without a successful check-in (awake time; sleep never counts), the screen turns off in handheld mode, or the game is closed in TV mode, after a one-minute warning; the next successful check-in restores the screen
+- Remote commands, signed like the check-ins and executed at most once: grant extra minutes for today, update the limits or the playtime window, lock now; executions are reported back with the next check-in
+- New notifications when the network is disconnected (English, French, Simplified Chinese)
+
+### Server (new, in the deployment repository)
+
+- Python check-in server (standard library only) with `switchctl` to queue grants, policy changes and locks
+
 ## Release 2.4.0
 
 ### Overlay

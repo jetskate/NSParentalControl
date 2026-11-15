@@ -68,6 +68,8 @@ Parental control has the following features:
 - Define individual limits (since 1.3)
 - Define bed time (since 2.1)
 - Define the playtime window: earliest allowed play time and bed time (since 2.2)
+- Define separate weekday and weekend limits; the day rolls over at 04:00 by default (since 2.5)
+- Heartbeat check-ins to a server with a dead man's switch (screen off / game closed when the server stays unreachable) and signed remote commands: grant extra time for today, change the limits or the window, lock now (since 2.5, see `docs/heartbeat.md`)
 
 **All users**
 - Interface and notifications are shown in the console language (English and French, since 2.3)

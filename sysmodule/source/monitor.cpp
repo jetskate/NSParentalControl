@@ -104,7 +104,7 @@ namespace alefbet::pctrl::srv {
 
         const auto& userId = accountUidToString(user.uid);
         const auto titleId = getRunningApplicationTitleId(pid);
-        const auto eval = core::evaluatePlayRules(getDailyLimitForUser(userId),
+        const auto eval = core::evaluatePlayRules(getEffectiveDailyLimitForUser(userId),
                                                   getUserUsageTimeForToday(user.uid),
                                                   getAdjustedCurrentTime(),
                                                   getGameStartTime(userId),
@@ -256,7 +256,7 @@ namespace alefbet::pctrl::srv {
                     const auto totalDuration = getUserUsageTimeForToday(user.uid);                    
 
                     const auto& userId = accountUidToString(user.uid);
-                    daily_limit = getDailyLimitForUser(userId);
+                    daily_limit = getEffectiveDailyLimitForUser(userId);
 
                     const auto gameStartTime = getGameStartTime(userId);
                     const auto bedtime = getBedtime(userId);

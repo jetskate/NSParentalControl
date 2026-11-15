@@ -268,40 +268,86 @@ namespace alefbet::pctrl::helpers {
         return std::string(langEntry->name);
     }
 
-    /*! @brief Retrieves today's date as a string in YYYYMMDD format.
+    /*! @brief Reads the current local calendar time.
      *
-     * @return Date string, or empty string on failure.
+     * @param time Receives the calendar time.
+     * @return true on success, false on failure.
      */
-    std::string today() {        
+    static bool getLocalCalendarTime(TimeCalendarTime& time) {
         ::Result rc = timeInitialize();
         if(R_FAILED(rc)) {
             logError("[Helpers] Could not connect to time service\n");
-            return "";
+            return false;
         }
 
         u64 ts;
-        TimeCalendarTime time;
         TimeCalendarAdditionalInfo info;
-        rc = timeGetCurrentTime(TimeType_LocalSystemClock, &ts);        
+        rc = timeGetCurrentTime(TimeType_LocalSystemClock, &ts);
         if(R_FAILED(rc)) {
             logError("[Helpers] Could not get current time (err %i:%i)\n", R_MODULE(rc), R_DESCRIPTION(rc));
-            return "";
+            return false;
         }
 
         rc = timeToCalendarTimeWithMyRule(ts, &time, &info);
         if(R_FAILED(rc)) {
             logError("[Helpers] Could not convert timestamp\n");
+            return false;
+        }
+
+        return true;
+    }
+
+    /*! @brief Retrieves the start of the logical day, in minutes since midnight.
+     *
+     * Reads the day_start_minutes setting; defaults to 240 (04:00) when the
+     * setting is absent, which matches the historical behaviour expected by
+     * the users of this fork. A value of 0 restores the calendar day.
+     *
+     * @return Day start in minutes since midnight (0-1439).
+     */
+    u16 getDayStartMinutes() {
+        auto& settings = loadSettings();
+        if(!settings.contains(SETTING_DAY_START_MINUTES)) {
+            return 240;
+        }
+
+        const u64 value = settings[SETTING_DAY_START_MINUTES].int_value;
+        return static_cast<u16>(value > 1439 ? 1439 : value);
+    }
+
+    /*! @brief Computes the current logical day.
+     *
+     * The logical day starts at the configured day start (see
+     * getDayStartMinutes) instead of midnight: before that time, "today" is
+     * still the previous calendar day, and the weekday follows the logical
+     * date. The pure computation lives in core::logicalDay.
+     *
+     * @return The logical day, or a zeroed LogicalDay on failure.
+     */
+    core::LogicalDay getLogicalToday() {
+        TimeCalendarTime time;
+        if(!getLocalCalendarTime(time)) {
+            return core::LogicalDay{};
+        }
+
+        const u16 minutesSinceMidnight = static_cast<u16>(time.hour * 60 + time.minute);
+        return core::logicalDay(time.year, time.month, time.day, minutesSinceMidnight, getDayStartMinutes());
+    }
+
+    /*! @brief Retrieves today's logical date as a string in YYYYMMDD format.
+     *
+     * @return Date string, or empty string on failure.
+     */
+    std::string today() {
+        TimeCalendarTime time;
+        if(!getLocalCalendarTime(time)) {
             return "";
         }
-        
-        char buffer[13] = {0};
-        std::snprintf(buffer, sizeof(buffer), "%04d%02d%02d",
-            time.year,
-            time.month,
-            time.day
-        );
 
-        return std::string(buffer);
+        const u16 minutesSinceMidnight = static_cast<u16>(time.hour * 60 + time.minute);
+        const auto logical = core::logicalDay(time.year, time.month, time.day, minutesSinceMidnight, getDayStartMinutes());
+
+        return core::formatDate(logical.year, logical.month, logical.day);
     }
 
     /*! @brief Retrieves the current time in minutes since midnight.
@@ -809,32 +855,163 @@ namespace alefbet::pctrl::helpers {
         return core::deserializeUserValues(data);
     }
 
-    /*! @brief Retrieves the daily usage limit for a specific user.
+    /*! @brief Reads a per-user value from a serialized per-user setting.
+     *
+     * @param key The setting key holding the serialized values.
+     * @param userId The user ID string.
+     * @return The value for the user, or 0 if not set.
+     */
+    static u16 getPerUserValue(const char* key, const std::string& userId) {
+        auto& settings = loadSettings();
+
+        if(!settings.contains(key)) {
+            return 0;
+        }
+
+        const auto& valuesStr = settings[key].string_value;
+        if(valuesStr.empty()) {
+            return 0;
+        }
+
+        auto valuesMap = deserializeDailyLimits(valuesStr);
+        auto it = valuesMap.find(userId);
+        if(it != valuesMap.end()) {
+            return it->second;
+        }
+
+        return 0;
+    }
+
+    /*! @brief Retrieves the daily usage limit applicable today for a specific user.
+     *
+     * Two limits can be defined per user: the weekday limit
+     * (daily_limit_users) and the weekend limit (daily_limit_weekend_users).
+     * The applicable one is selected with the weekday of the logical day
+     * (see core::dailyLimitForDay): when no weekend limit is set, the
+     * weekday limit applies every day.
      *
      * @param userId The user ID string.
      * @return The daily limit in minutes, or 0 if not set.
      */
     u16 getDailyLimitForUser(const std::string& userId) {
+        const u16 weekdayLimit = getPerUserValue(SETTING_DAILY_LIMIT_USERS, userId);
+        const u16 weekendLimit = getPerUserValue(SETTING_DAILY_LIMIT_WEEKEND_USERS, userId);
+
+        if(weekendLimit == 0) {
+            return weekdayLimit;
+        }
+
+        const auto logical = getLogicalToday();
+        if(logical.year == 0) {
+            // The date could not be read: fall back to the weekday limit
+            return weekdayLimit;
+        }
+
+        const u16 limit = core::dailyLimitForDay(weekdayLimit, weekendLimit, logical.weekday);
+        logDebug("[Helpers] Daily limit for user %s: weekday=%i, weekend=%i, logical weekday=%i -> %i\n",
+                 userId.c_str(), weekdayLimit, weekendLimit, logical.weekday, limit);
+        return limit;
+    }
+
+    /*! @brief Retrieves the weekend daily usage limit for a specific user.
+     *
+     * @param userId The user ID string.
+     * @return The weekend daily limit in minutes, or 0 if not set.
+     */
+    u16 getWeekendDailyLimitForUser(const std::string& userId) {
+        return getPerUserValue(SETTING_DAILY_LIMIT_WEEKEND_USERS, userId);
+    }
+
+    /*! @brief Retrieves the effective daily limit for a user, including a remote grant.
+     *
+     * The base limit (see getDailyLimitForUser) is increased by the stored
+     * grant when the grant targets the current logical day and this user
+     * (see core::effectiveDailyLimit). This is the limit the enforcement
+     * and the remaining-time computations must use.
+     *
+     * @param userId The user ID string.
+     * @return The effective daily limit in minutes.
+     */
+    u16 getEffectiveDailyLimitForUser(const std::string& userId) {
+        const u16 baseLimit = getDailyLimitForUser(userId);
+
         auto& settings = loadSettings();
-
-        if(!settings.contains(SETTING_DAILY_LIMIT_USERS)) {
-            return 0;
+        if(!settings.contains(SETTING_GRANT_MINUTES) || !settings.contains(SETTING_GRANT_DATE) ||
+           !settings.contains(SETTING_GRANT_USER)) {
+            return baseLimit;
         }
 
-        const auto& limitsStr = settings[SETTING_DAILY_LIMIT_USERS].string_value;
-        if(limitsStr.empty()) {
-            logDebug("[Helpers] No daily limit for user %s\n", userId.c_str());
-            return 0;
+        const bool applies = settings[SETTING_GRANT_DATE].string_value == today() &&
+                             settings[SETTING_GRANT_USER].string_value == userId;
+        const u16 grantMinutes = static_cast<u16>(settings[SETTING_GRANT_MINUTES].int_value);
+
+        return core::effectiveDailyLimit(baseLimit, grantMinutes, applies);
+    }
+
+    /*! @brief Applies a remote grant of extra minutes for today to a user.
+     *
+     * The grant is stored for the current logical day: a grant stored for
+     * a previous day (or another user) is replaced, a grant for the same
+     * day and user accumulates (see core::accumulatedGrant). The grant is
+     * persisted in the settings, so it survives a reboot; it stops
+     * applying by itself when the logical day changes.
+     *
+     * @param userId The user ID string.
+     * @param minutes The granted minutes.
+     */
+    void applyGrantForUser(const std::string& userId, u16 minutes) {
+        const std::string date = today();
+
+        u16 existing = 0;
+        auto& settings = loadSettings();
+        if(settings.contains(SETTING_GRANT_MINUTES) && settings.contains(SETTING_GRANT_DATE) &&
+           settings.contains(SETTING_GRANT_USER) &&
+           settings[SETTING_GRANT_DATE].string_value == date &&
+           settings[SETTING_GRANT_USER].string_value == userId) {
+            existing = static_cast<u16>(settings[SETTING_GRANT_MINUTES].int_value);
         }
 
-        auto limitsMap = deserializeDailyLimits(limitsStr);
-        auto it = limitsMap.find(userId);
-        if(it != limitsMap.end()) {
-            return it->second;
+        saveSetting(Setting {
+            .key = SETTING_GRANT_DATE,
+            .type = STRING,
+            .string_value = date
+        });
+        saveSetting(Setting {
+            .key = SETTING_GRANT_USER,
+            .type = STRING,
+            .string_value = userId
+        });
+        saveSetting(Setting {
+            .key = SETTING_GRANT_MINUTES,
+            .type = INTEGER,
+            .int_value = core::accumulatedGrant(existing, minutes)
+        });
+
+        logInfo("[Helpers] Granted %i extra minutes to user %s for %s\n", minutes, userId.c_str(), date.c_str());
+    }
+
+    /*! @brief Sets the weekend daily usage limit for a specific user.
+     *
+     * @param userId The user ID string.
+     * @param limit_in_minutes The weekend limit in minutes.
+     */
+    void setWeekendDailyLimitForUser(const std::string& userId, u16 limit_in_minutes) {
+        auto limitsMap = deserializeDailyLimits("");
+
+        auto& settings = loadSettings();
+        if(settings.contains(SETTING_DAILY_LIMIT_WEEKEND_USERS)) {
+            limitsMap = deserializeDailyLimits(settings[SETTING_DAILY_LIMIT_WEEKEND_USERS].string_value);
         }
 
-        logDebug("[Helpers] No daily limit for user %s\n", userId.c_str());
-        return 0;
+        limitsMap[userId] = limit_in_minutes;
+
+        Setting setting {
+            .key = SETTING_DAILY_LIMIT_WEEKEND_USERS,
+            .type = STRING,
+            .string_value = serializeDailyLimits(limitsMap)
+        };
+
+        saveSetting(setting);
     }
 
     /*! @brief Sets the daily usage limit for a specific user.

@@ -458,6 +458,177 @@ TEST(eval_blocked_never_notifies) {
     CHECK_TRUE(!r.shouldNotify);
 }
 
+// ---------------------------------------------------------------------------
+// Civil date conversions (daysFromCivil / civilFromDays / weekdayFromDays)
+// ---------------------------------------------------------------------------
+
+TEST(civil_epoch_is_day_zero) {
+    CHECK_EQ(daysFromCivil(1970, 1, 1), 0LL);
+}
+
+TEST(civil_known_day_counts) {
+    CHECK_EQ(daysFromCivil(2000, 1, 1), 10957LL);
+    CHECK_EQ(daysFromCivil(2024, 2, 29), 19782LL);
+    CHECK_EQ(daysFromCivil(1969, 12, 31), -1LL);
+}
+
+TEST(civil_roundtrip) {
+    const s32 dates[][3] = {
+        {1970, 1, 1}, {1969, 12, 31}, {2000, 2, 29}, {2024, 2, 29},
+        {2023, 3, 1}, {2026, 11, 15}, {1999, 12, 31}, {2100, 3, 1}
+    };
+    for(const auto& d : dates) {
+        s32 year = 0;
+        u32 month = 0, day = 0;
+        civilFromDays(daysFromCivil(d[0], d[1], d[2]), year, month, day);
+        CHECK_EQ(year, d[0]);
+        CHECK_EQ(month, static_cast<u32>(d[1]));
+        CHECK_EQ(day, static_cast<u32>(d[2]));
+    }
+}
+
+TEST(weekday_known_dates) {
+    // 0 = Monday ... 5 = Saturday, 6 = Sunday
+    CHECK_EQ(weekdayFromDays(daysFromCivil(1970, 1, 1)), 3u);  // Thursday
+    CHECK_EQ(weekdayFromDays(daysFromCivil(2000, 1, 1)), 5u);  // Saturday
+    CHECK_EQ(weekdayFromDays(daysFromCivil(2023, 1, 1)), 6u);  // Sunday
+    CHECK_EQ(weekdayFromDays(daysFromCivil(2024, 2, 29)), 3u); // Thursday
+    CHECK_EQ(weekdayFromDays(daysFromCivil(2026, 11, 15)), 6u); // Sunday
+    CHECK_EQ(weekdayFromDays(daysFromCivil(2026, 11, 16)), 0u); // Monday
+    CHECK_EQ(weekdayFromDays(-1), 2u);                          // 1969-12-31, Wednesday
+}
+
+TEST(weekend_day_detection) {
+    CHECK_TRUE(!isWeekendDay(0)); // Monday
+    CHECK_TRUE(!isWeekendDay(4)); // Friday
+    CHECK_TRUE(isWeekendDay(5));  // Saturday
+    CHECK_TRUE(isWeekendDay(6));  // Sunday
+}
+
+// ---------------------------------------------------------------------------
+// logicalDay (day starting at a configurable hour, e.g. 04:00)
+// ---------------------------------------------------------------------------
+
+TEST(logical_day_after_start_is_same_day) {
+    // Sunday 2026-11-15 10:00, day starts at 04:00 -> still Sunday 15th
+    auto d = logicalDay(2026, 11, 15, 600, 240);
+    CHECK_EQ(d.year, 2026);
+    CHECK_EQ(d.month, 11u);
+    CHECK_EQ(d.day, 15u);
+    CHECK_EQ(d.weekday, 6u);
+}
+
+TEST(logical_day_before_start_is_previous_day) {
+    // Sunday 2026-11-15 02:30, day starts at 04:00 -> logical Saturday 14th
+    auto d = logicalDay(2026, 11, 15, 150, 240);
+    CHECK_EQ(d.year, 2026);
+    CHECK_EQ(d.month, 11u);
+    CHECK_EQ(d.day, 14u);
+    CHECK_EQ(d.weekday, 5u); // Saturday: the weekend limit follows the logical day
+}
+
+TEST(logical_day_exactly_at_start_is_same_day) {
+    auto d = logicalDay(2026, 11, 15, 240, 240);
+    CHECK_EQ(d.day, 15u);
+    CHECK_EQ(d.weekday, 6u);
+}
+
+TEST(logical_day_crosses_month_boundary) {
+    // 2026-11-01 01:00 -> logical 2026-10-31 (a Saturday)
+    auto d = logicalDay(2026, 11, 1, 60, 240);
+    CHECK_EQ(d.year, 2026);
+    CHECK_EQ(d.month, 10u);
+    CHECK_EQ(d.day, 31u);
+    CHECK_EQ(d.weekday, 5u);
+}
+
+TEST(logical_day_crosses_year_boundary) {
+    // 2027-01-01 00:30 -> logical 2026-12-31 (a Thursday)
+    auto d = logicalDay(2027, 1, 1, 30, 240);
+    CHECK_EQ(d.year, 2026);
+    CHECK_EQ(d.month, 12u);
+    CHECK_EQ(d.day, 31u);
+    CHECK_EQ(d.weekday, 3u);
+}
+
+TEST(logical_day_into_leap_day) {
+    // 2024-03-01 02:00 -> logical 2024-02-29 (a Thursday)
+    auto d = logicalDay(2024, 3, 1, 120, 240);
+    CHECK_EQ(d.year, 2024);
+    CHECK_EQ(d.month, 2u);
+    CHECK_EQ(d.day, 29u);
+    CHECK_EQ(d.weekday, 3u);
+}
+
+TEST(logical_day_zero_start_is_calendar_day) {
+    auto d = logicalDay(2026, 11, 15, 0, 0);
+    CHECK_EQ(d.day, 15u);
+    CHECK_EQ(d.weekday, 6u);
+}
+
+TEST(format_date_yyyymmdd) {
+    CHECK_EQ(formatDate(2026, 11, 15), std::string("20261115"));
+    CHECK_EQ(formatDate(2027, 1, 5), std::string("20270105"));
+}
+
+// ---------------------------------------------------------------------------
+// dailyLimitForDay (weekday / weekend dual limits)
+// ---------------------------------------------------------------------------
+
+TEST(limit_weekday_uses_weekday_limit) {
+    CHECK_EQ(dailyLimitForDay(60, 120, 0), 60); // Monday
+    CHECK_EQ(dailyLimitForDay(60, 120, 4), 60); // Friday
+}
+
+TEST(limit_weekend_uses_weekend_limit) {
+    CHECK_EQ(dailyLimitForDay(60, 120, 5), 120); // Saturday
+    CHECK_EQ(dailyLimitForDay(60, 120, 6), 120); // Sunday
+}
+
+TEST(limit_weekend_unset_falls_back_to_weekday_limit) {
+    // No weekend limit set: the single-limit behaviour is preserved
+    CHECK_EQ(dailyLimitForDay(60, 0, 5), 60);
+    CHECK_EQ(dailyLimitForDay(60, 0, 6), 60);
+}
+
+TEST(limit_zero_weekday_with_weekend_set) {
+    // No weekday limit but a weekend one: weekdays unlimited, weekends capped
+    CHECK_EQ(dailyLimitForDay(0, 120, 2), 0);
+    CHECK_EQ(dailyLimitForDay(0, 120, 6), 120);
+}
+
+// ---------------------------------------------------------------------------
+// effectiveDailyLimit / accumulatedGrant (remote one-shot grants)
+// ---------------------------------------------------------------------------
+
+TEST(grant_applies_adds_to_base_limit) {
+    CHECK_EQ(effectiveDailyLimit(60, 30, true), 90);
+    CHECK_EQ(effectiveDailyLimit(120, 45, true), 165);
+}
+
+TEST(grant_not_applicable_keeps_base_limit) {
+    // Grant issued for another day or another user: no effect
+    CHECK_EQ(effectiveDailyLimit(60, 30, false), 60);
+}
+
+TEST(grant_zero_minutes_is_a_no_op) {
+    CHECK_EQ(effectiveDailyLimit(60, 0, true), 60);
+}
+
+TEST(grant_creates_a_limit_when_no_base_limit) {
+    CHECK_EQ(effectiveDailyLimit(0, 30, true), 30);
+}
+
+TEST(grant_result_is_clamped) {
+    CHECK_EQ(effectiveDailyLimit(65000, 1000, true), 65535);
+}
+
+TEST(grants_accumulate_during_the_day) {
+    CHECK_EQ(accumulatedGrant(0, 30), 30);
+    CHECK_EQ(accumulatedGrant(30, 30), 60);
+    CHECK_EQ(accumulatedGrant(65500, 100), 65535);
+}
+
 int main() {
     return tf::runAll();
 }

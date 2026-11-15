@@ -27,6 +27,8 @@ const StringMap& chineseSimplified() {
         {"Parental control enabled", "家长控制已启用"},
         {"%s left", "剩余 %s"},
         {"This game is not allowed", "此游戏不允许"},
+        {"Network disconnected, the screen will turn off in 1 minute", "网络已断开，屏幕将在 1 分钟后熄灭"},
+        {"Network disconnected, the game will be closed in 1 minute", "网络已断开，游戏将在 1 分钟后关闭"},
         {"h", "小时"},
         {"mn", "分钟"}
     };

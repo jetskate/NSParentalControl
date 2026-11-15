@@ -85,6 +85,8 @@ namespace alefbet::pctrl {
         u16 getUserUsageTimeForToday(const AccountUid& uid);
 
         std::string today();
+        core::LogicalDay getLogicalToday();
+        u16 getDayStartMinutes();
         u16 getCurrentTimeInMinutesSinceMidnight();
         std::string formatTimeInMinutes(u16 minutesSinceMidnight);
         s64 getSteadyClockSeconds();
@@ -106,6 +108,12 @@ namespace alefbet::pctrl {
         // Limits management
         u16 getDailyLimitForUser(const std::string& userId);
         void setDailyLimitForUser(const std::string& userId, u16 limit_in_minutes);
+        u16 getWeekendDailyLimitForUser(const std::string& userId);
+        void setWeekendDailyLimitForUser(const std::string& userId, u16 limit_in_minutes);
+
+        // Remote grants management
+        u16 getEffectiveDailyLimitForUser(const std::string& userId);
+        void applyGrantForUser(const std::string& userId, u16 minutes);
 
         // Bed time management
         u16 getBedtime(const std::string& userId);

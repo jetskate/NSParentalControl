@@ -28,6 +28,7 @@
 #include "ipc/Server.hpp"
 #include "service.h"
 #include "monitor.h"
+#include "heartbeat.h"
 #include "i18n/i18n.h"
 
 using namespace alefbet::pctrl::logger;
@@ -38,16 +39,23 @@ using namespace alefbet::pctrl::i18n;
 extern "C" {
 #endif
 
-    constexpr size_t TotalHeapSize = ams::util::AlignUp(512_KB, ams::os::MemoryHeapUnitSize);
+    // The heap also hosts the BSD socket buffers of the heartbeat thread:
+    // 512 KB was not enough, 4 MB leaves room for the socket configuration
+    // and the settings/history containers (see docs/heartbeat.md).
+    constexpr size_t TotalHeapSize = ams::util::AlignUp(4_MB, ams::os::MemoryHeapUnitSize);
 
     constexpr size_t ThreadServiceStackRequiredSizeBytes = ams::util::AlignUp(256_KB, 128);
     constexpr size_t ThreadServiceStackRequiredSizeAligned = ams::util::AlignUp(ThreadServiceStackRequiredSizeBytes, ams::os::MemoryPageSize);
 
     constexpr size_t ThreadMonitorStackRequiredSizeBytes = ams::util::AlignUp(128_KB, 128);
     constexpr size_t ThreadMonitorStackRequiredSizeAligned = ams::util::AlignUp(ThreadMonitorStackRequiredSizeBytes, ams::os::MemoryPageSize);
-    
+
+    constexpr size_t ThreadHeartbeatStackRequiredSizeBytes = ams::util::AlignUp(256_KB, 128);
+    constexpr size_t ThreadHeartbeatStackRequiredSizeAligned = ams::util::AlignUp(ThreadHeartbeatStackRequiredSizeBytes, ams::os::MemoryPageSize);
+
     alignas(ams::os::MemoryPageSize) constinit u8 g_thread_service_memory[ThreadServiceStackRequiredSizeAligned];
     alignas(ams::os::MemoryPageSize) constinit u8 g_thread_monitor_memory[ThreadMonitorStackRequiredSizeAligned];
+    alignas(ams::os::MemoryPageSize) constinit u8 g_thread_heartbeat_memory[ThreadHeartbeatStackRequiredSizeAligned];
 
     // Minimize fs resource usage
     u32 __nx_fsdev_direntry_cache_size = 1;
@@ -165,6 +173,15 @@ namespace alefbet::pctrl {
         monitor->loop();
     }
 
+    void startHeartbeat(void* args) {
+        void** _args = (void**)args;
+        alefbet::pctrl::srv::Heartbeat* heartbeat = static_cast<alefbet::pctrl::srv::Heartbeat*>(_args[0]);
+        alefbet::pctrl::srv::Service* service = static_cast<alefbet::pctrl::srv::Service*>(_args[1]);
+
+        heartbeat->setService(service);
+        heartbeat->loop();
+    }
+
 }
 
 int main(int argc, char **argv)
@@ -231,7 +248,21 @@ int main(int argc, char **argv)
     }
 
     // Start monitoring
-    monitor->start(); 
+    monitor->start();
+
+    Thread threadHeartbeat;
+    alefbet::pctrl::srv::Heartbeat* heartbeat = new alefbet::pctrl::srv::Heartbeat();
+    void* heartbeatArgs[2] { heartbeat, service };
+    rc = threadCreate(&threadHeartbeat, alefbet::pctrl::startHeartbeat, &heartbeatArgs, g_thread_heartbeat_memory, ThreadHeartbeatStackRequiredSizeAligned, 0x2c, -2);
+    if(R_FAILED(rc)) {
+        logError("Could not create the heartbeat thread, error %i:%i.\n", R_MODULE(rc), R_DESCRIPTION(rc));
+        return 8;
+    }
+    rc = threadStart(&threadHeartbeat);
+    if(R_FAILED(rc)) {
+        logError("Could not start the heartbeat thread, error %i:%i.\n", R_MODULE(rc), R_DESCRIPTION(rc));
+        return 9;
+    }
 
     rc = threadWaitForExit(&threadIpc);
     if(R_FAILED(rc)) {
@@ -245,6 +276,13 @@ int main(int argc, char **argv)
         return 7;
     }
 
+    rc = threadWaitForExit(&threadHeartbeat);
+    if(R_FAILED(rc)) {
+        logError("Could not wait for the heartbeat thread to end, error %i:%i.\n", R_MODULE(rc), R_DESCRIPTION(rc));
+        return 10;
+    }
+
+    delete heartbeat;
     delete monitor;
     delete service;
 

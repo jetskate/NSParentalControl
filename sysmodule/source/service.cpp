@@ -226,7 +226,7 @@ namespace alefbet::pctrl::srv {
         // Get the daily limit
         auto settings = loadSettings();
         const auto& userId = accountUidToString(user.uid);
-        const auto& daily_limit = getDailyLimitForUser(userId);
+        const auto& daily_limit = getEffectiveDailyLimitForUser(userId);
         s16 remaining_time_in_minutes = 0;
         if(daily_limit > usage_time_in_minutes) {
             remaining_time_in_minutes = daily_limit - usage_time_in_minutes;

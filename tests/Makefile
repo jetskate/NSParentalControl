@@ -6,7 +6,7 @@ DEVKITPRO ?= /opt/devkitpro
 CXXFLAGS ?= -std=c++20 -Wall -Wextra -I../sysmodule/source -I$(DEVKITPRO)/libnx/include
 
 BUILDDIR = build
-TESTS = playtime_rules_test command_test i18n_test
+TESTS = playtime_rules_test command_test i18n_test heartbeat_protocol_test
 
 # devkitA64 cross-compiler (used only by the `switch` target).
 A64CXX ?= $(DEVKITPRO)/devkitA64/bin/aarch64-none-elf-g++
@@ -35,7 +35,7 @@ $(BUILDDIR)/switch/switch_only_test.o: switch_only_test.cpp ../sysmodule/source/
 $(BUILDDIR)/switch:
 	mkdir -p $(BUILDDIR)/switch
 
-$(BUILDDIR)/%: %.cpp ../sysmodule/source/playtime_rules.cpp ../sysmodule/source/i18n/i18n.cpp \
+$(BUILDDIR)/%: %.cpp ../sysmodule/source/playtime_rules.cpp ../sysmodule/source/heartbeat_protocol.cpp ../sysmodule/source/i18n/i18n.cpp \
 	../sysmodule/source/i18n/i18n_fr.cpp ../sysmodule/source/i18n/i18n_zh_hans.cpp | $(BUILDDIR)
 	$(CXX) $(CXXFLAGS) -o $@ $^
 
