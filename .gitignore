@@ -56,3 +56,13 @@ build.nosync/
 *.npdm
 
 .DS_Store
+
+# Companion server secrets & runtime data
+server/config.json
+server/data/
+server/vault/
+server/logs/
+server/poller/poller_state.json
+*.vne
+settings.bin
+__pycache__/

@@ -1,0 +1,231 @@
+#!/usr/bin/env python3
+"""
+switchctl - Management CLI for Switch Parental Control Server.
+
+Commands:
+  switchctl grant <minutes>
+  switchctl set [weekday_limit=N] [weekend_limit=N] [game_start=HH:MM] [bedtime=HH:MM]
+  switchctl lock
+  switchctl pending
+  switchctl status
+"""
+
+import argparse
+from contextlib import contextmanager
+from datetime import datetime
+import fcntl
+import json
+import os
+import sys
+import time
+
+
+DEFAULT_DATA_DIR = os.environ.get("SWITCH_SERVER_DATA", "/home/ai-agent/switch-server/data")
+
+
+def parse_time_or_int(raw):
+    raw = str(raw).strip()
+    if ":" in raw:
+        parts = raw.split(":")
+        if len(parts) != 2:
+            raise ValueError(f"invalid HH:MM value: {raw}")
+        h = int(parts[0])
+        m = int(parts[1])
+        if not (0 <= h <= 23 and 0 <= m <= 59):
+            raise ValueError(f"time out of range: {raw}")
+        return h * 60 + m
+    val = int(raw)
+    if not (0 <= val <= 1439):
+        raise ValueError(f"minutes since midnight out of range (0..1439): {val}")
+    return val
+
+
+def atomic_write_json(path, data):
+    os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
+    tmp_path = f"{path}.tmp.{os.getpid()}"
+    with open(tmp_path, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+        f.write("\n")
+        f.flush()
+        os.fsync(f.fileno())
+    os.replace(tmp_path, path)
+
+
+@contextmanager
+def flock_path(lock_path):
+    os.makedirs(os.path.dirname(os.path.abspath(lock_path)), exist_ok=True)
+    with open(lock_path, "a+", encoding="utf-8") as lf:
+        fcntl.flock(lf.fileno(), fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(lf.fileno(), fcntl.LOCK_UN)
+
+
+def append_event(data_dir, event_type, **fields):
+    now_ts = int(time.time())
+    record = {
+        "ts": now_ts,
+        "iso": datetime.fromtimestamp(now_ts).astimezone().isoformat(),
+        "event": event_type,
+    }
+    record.update(fields)
+    events_path = os.path.join(data_dir, "events.jsonl")
+    with flock_path(os.path.join(data_dir, ".events.lock")):
+        with open(events_path, "a", encoding="utf-8") as f:
+            f.write(json.dumps(record, ensure_ascii=False) + "\n")
+            f.flush()
+            os.fsync(f.fileno())
+
+
+def enqueue_command(data_dir, cmd_body):
+    commands_path = os.path.join(data_dir, "commands.json")
+    now_ts = int(time.time())
+    with flock_path(os.path.join(data_dir, ".commands.lock")):
+        if os.path.exists(commands_path):
+            with open(commands_path, "r", encoding="utf-8") as f:
+                qdata = json.load(f)
+        else:
+            qdata = {"config_rev": 1, "seq": 0, "commands": []}
+
+        seq = int(qdata.get("seq", 0)) + 1
+        qdata["seq"] = seq
+        if cmd_body["type"] == "set_policy":
+            qdata["config_rev"] = int(qdata.get("config_rev", 1)) + 1
+
+        command_id = f"c{now_ts}-{seq}"
+        entry = {
+            "command_id": command_id,
+            "created_at": now_ts,
+            "status": "pending",
+        }
+        entry.update(cmd_body)
+        qdata.setdefault("commands", []).append(entry)
+        atomic_write_json(commands_path, qdata)
+
+    append_event(data_dir, "command_queued", command_id=command_id, type=cmd_body["type"])
+    print(command_id)
+    return 0
+
+
+def cmd_grant(args):
+    if not (1 <= args.minutes <= 1440):
+        print("Error: minutes must be in 1..1440", file=sys.stderr)
+        return 2
+    return enqueue_command(args.data_dir, {"type": "grant_minutes", "minutes": args.minutes})
+
+
+def cmd_set(args):
+    if not args.params:
+        print("Error: specify at least one of weekday_limit, weekend_limit, game_start, bedtime", file=sys.stderr)
+        return 2
+
+    body = {
+        "type": "set_policy",
+        "weekday_limit": -1,
+        "weekend_limit": -1,
+        "game_start": -1,
+        "bedtime": -1,
+    }
+    for item in args.params:
+        if "=" not in item:
+            print(f"Error: expected key=value, got {item}", file=sys.stderr)
+            return 2
+        k, v = item.split("=", 1)
+        k = k.strip()
+        if k in ("weekday_limit", "weekend_limit"):
+            val = int(v)
+            if not (0 <= val <= 10080):
+                print(f"Error: {k} out of range (0..10080): {val}", file=sys.stderr)
+                return 2
+            body[k] = val
+        elif k in ("game_start", "bedtime"):
+            body[k] = parse_time_or_int(v)
+        else:
+            print(f"Error: unknown policy field: {k}", file=sys.stderr)
+            return 2
+
+    return enqueue_command(args.data_dir, body)
+
+
+def cmd_lock(args):
+    return enqueue_command(args.data_dir, {"type": "lock_now"})
+
+
+def cmd_pending(args):
+    commands_path = os.path.join(args.data_dir, "commands.json")
+    with flock_path(os.path.join(args.data_dir, ".commands.lock")):
+        if not os.path.exists(commands_path):
+            print("[]")
+            return 0
+        with open(commands_path, "r", encoding="utf-8") as f:
+            qdata = json.load(f)
+    pending = [c for c in qdata.get("commands", []) if c.get("status") == "pending"]
+    print(json.dumps(pending, ensure_ascii=False, indent=2))
+    return 0
+
+
+def cmd_status(args):
+    state_path = os.path.join(args.data_dir, "state.json")
+    poller_path = os.path.join(args.data_dir, "poller_view.json")
+    commands_path = os.path.join(args.data_dir, "commands.json")
+
+    state = {}
+    if os.path.exists(state_path):
+        with open(state_path, "r", encoding="utf-8") as f:
+            state = json.load(f)
+    poller = {}
+    if os.path.exists(poller_path):
+        with open(poller_path, "r", encoding="utf-8") as f:
+            poller = json.load(f)
+    pending_count = 0
+    if os.path.exists(commands_path):
+        with open(commands_path, "r", encoding="utf-8") as f:
+            qdata = json.load(f)
+        pending_count = sum(1 for c in qdata.get("commands", []) if c.get("status") == "pending")
+
+    now_ts = int(time.time())
+    devices = state.get("devices", {})
+    for dev in devices.values():
+        last_seen = int(dev.get("last_seen", 0))
+        dev["age_s"] = now_ts - last_seen if last_seen else None
+        dev["stale"] = (now_ts - last_seen > 180) if last_seen else True
+
+    summary = {
+        "now": now_ts,
+        "pending_commands": pending_count,
+        "devices": devices,
+        "poller_view": poller,
+    }
+    print(json.dumps(summary, ensure_ascii=False, indent=2))
+    return 0
+
+
+def main():
+    parser = argparse.ArgumentParser(prog="switchctl", description="Switch Parental Control Server CLI")
+    parser.add_argument("--data-dir", default=DEFAULT_DATA_DIR, help="Path to server data dir")
+    sub = parser.add_subparsers(dest="command", required=True)
+
+    p_grant = sub.add_parser("grant", help="Grant extra minutes for today (1..1440)")
+    p_grant.add_argument("minutes", type=int)
+    p_grant.set_defaults(func=cmd_grant)
+
+    p_set = sub.add_parser("set", help="Set policy (weekday_limit, weekend_limit, game_start, bedtime)")
+    p_set.add_argument("params", nargs="+")
+    p_set.set_defaults(func=cmd_set)
+
+    p_lock = sub.add_parser("lock", help="Enqueue immediate lock_now")
+    p_lock.set_defaults(func=cmd_lock)
+
+    p_pending = sub.add_parser("pending", help="Show pending commands")
+    p_pending.set_defaults(func=cmd_pending)
+
+    p_status = sub.add_parser("status", help="Show current device & queue status")
+    p_status.set_defaults(func=cmd_status)
+
+    args = parser.parse_args()
+    return args.func(args)
+
+
+if __name__ == "__main__":
+    sys.exit(main())

@@ -1,0 +1,26 @@
+services:
+  switch-server:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: switch-server:latest
+    container_name: switch-server
+    user: "1003:1003"
+    restart: unless-stopped
+    environment:
+      - TZ=Asia/Shanghai
+      - HOME=/home/ai-agent
+    ports:
+      - "0.0.0.0:39107:39107/tcp"
+      - "127.0.0.1:8788:8788/tcp"
+      - "100.79.41.61:8788:8788/tcp"
+    volumes:
+      - /home/ai-agent/switch-server/config.json:/home/ai-agent/switch-server/config.json
+      - /home/ai-agent/switch-server/data:/home/ai-agent/switch-server/data
+      - /home/ai-agent/workspace/projects/switch-parental/vault:/home/ai-agent/workspace/projects/switch-parental/vault
+      - /home/ai-agent/.ssh:/home/ai-agent/.ssh:ro
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"

@@ -1,0 +1,18 @@
+{
+  "listen_host": "0.0.0.0",
+  "listen_port": 39107,
+  "web_listen_host": "0.0.0.0",
+  "web_listen_port": 8788,
+  "data_dir": "/home/ai-agent/switch-server/data",
+  "heartbeat_token": "<64-char-lowercase-hex-32-byte-token>",
+  "admin_pin": "2580",
+  "web_session_secret": "<64-char-lowercase-hex-secret>",
+  "rate_limit_per_min": 60,
+  "reset_hour": 4,
+  "default_policy": {
+    "weekday_limit": 60,
+    "weekend_limit": 120,
+    "game_start": 420,
+    "bedtime": 1380
+  }
+}
